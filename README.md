@@ -1,130 +1,100 @@
 # GMAP: Generalized Manipulation of Articulated Objects Using Pre-trained Model
 
-> 复现论文: *GMAP: Generalized Manipulation of Articulated Objects in Robotic Using Pre-trained Model* (AAAI 2025)
+[![Conference](https://img.shields.io/badge/AAAI-2025-blue.svg)](https://ojs.aaai.org/index.php/AAAI/article/view/33615)
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-3776AB.svg)](https://www.python.org/)
+[![PyTorch 1.12+](https://img.shields.io/badge/PyTorch-1.12+-EE4C2C.svg)](https://pytorch.org/)
 
-## 概述
+[Paper](https://ojs.aaai.org/index.php/AAAI/article/view/33615) | [Code](https://github.com/robhlzeng/GMAP)
 
-GMAP 系统性地整合了从感知到操控的完整流程：
+## Abstract
 
-1. **预训练阶段** — 基于多尺度点云特征提取器 (MSFE) 的 VQ-VAE 掩码预训练
-2. **感知阶段** — 部件分割 (Seg-Net)、关节参数估计 (Para-Net)、可操作性预测 (Afford-Net)
-3. **操控阶段** — 轨迹规划 + SAPIEN 仿真评估
+Precise perception and dexterous manipulation of articulated objects remain central challenges for service robots. Existing approaches typically address perception and manipulation in isolation, limiting their generalization across diverse object categories. We present **GMAP**, a unified framework that systematically integrates the entire pipeline from perception to manipulation of articulated objects. GMAP introduces a multi-scale point cloud feature extraction module (MSFE) with a pre-training and fine-tuning paradigm to overcome the scarcity of annotated articulated object data. The framework performs part-level segmentation, estimates geometric and kinematic joint parameters, evaluates point-level affordance proposals, and dynamically computes robot execution trajectories. Extensive experiments demonstrate that GMAP achieves state-of-the-art performance in both perception and manipulation of articulated objects across seven object categories.
 
-## 项目结构
+<p align="center">
+  <img src="docs/images/framework.png" width="800">
+</p>
 
-```
-gmap/
-├── configs/                     # YAML 配置文件
-│   ├── pretrain.yaml           # VQ-VAE 预训练
-│   ├── segnet.yaml             # Seg-Net 微调
-│   ├── paranet.yaml            # Para-Net 微调
-│   ├── affordnet.yaml          # Afford-Net 微调
-│   └── simulation.yaml         # SAPIEN 仿真
-├── gmap/
-│   ├── models/                  # 模型定义
-│   │   ├── msfe.py             # 多尺度特征提取器 (3 尺度 ViT)
-│   │   ├── dvae.py             # dVAE 离散化 Tokenizer
-│   │   ├── pfe.py              # 点级特征传播
-│   │   ├── pretrain.py         # VQ-VAE 预训练模型
-│   │   ├── segnet.py           # 部件分割 + 可动性预测
-│   │   ├── paranet.py          # 关节参数估计
-│   │   ├── affordnet.py        # 可操作性预测
-│   │   ├── transformer.py      # ViT Encoder 模块
-│   │   └── pointnet2_utils.py  # FPS, KNN, 多尺度分组
-│   ├── data/                    # 数据集
-│   │   ├── shapenet_dataset.py # ShapeNet55 (预训练)
-│   │   ├── partnet_dataset.py  # PartNet-Mobility (下游任务)
-│   │   └── transforms.py       # 点云数据增强
-│   ├── train/                   # 训练脚本
-│   │   ├── train_pretrain.py   # VQ-VAE 预训练
-│   │   ├── train_segnet.py     # Seg-Net 训练
-│   │   ├── train_paranet.py    # Para-Net 训练
-│   │   └── train_affordnet.py  # Afford-Net 训练
-│   ├── eval/                    # 评估
-│   │   └── metrics.py          # mIoU, 轴误差, 位置误差
-│   ├── planner/                 # 轨迹规划
-│   │   └── trajectory.py       # 旋转/平移轨迹生成
-│   ├── simulation/              # SAPIEN 仿真
-│   │   ├── env.py              # 仿真环境
-│   │   ├── robot.py            # Panda 机器人控制
-│   │   └── evaluate_sim.py     # 端到端评估
-│   └── utils/                   # 工具函数
-│       ├── logger.py
-│       ├── checkpoint.py
-│       └── pc_utils.py
-├── tests/                       # 单元测试 (33 个)
-├── setup.py
-└── requirements.txt
-```
+## Installation
 
-## 安装
+### Requirements
+
+- Python >= 3.8
+- PyTorch >= 1.12
+- CUDA 11.x
+- SAPIEN >= 2.0 (for simulation evaluation)
 
 ```bash
-# 基础依赖
+# Clone repository
+git clone https://github.com/robhlzeng/GMAP.git
+cd GMAP
+
+# Install dependencies
 pip install -r requirements.txt
 
-# (可选) PointNet++ CUDA 算子加速
-pip install "git+https://github.com/erikwijmans/Pointnet2_PyTorch#egg=pointnet2_ops&subdirectory=pointnet2_ops_lib"
+# Install pointnet2_ops (requires CUDA toolkit)
+pip install git+https://github.com/erikwijmans/Pointnet2_PyTorch.git#subdirectory=pointnet2_ops_lib
 
-# (可选) SAPIEN 仿真器 (仿真评估时需要)
+# Install SAPIEN (optional, for simulation evaluation)
 pip install sapien
 
-# 安装项目
+# Install package
 pip install -e .
 ```
 
-> 未安装 pointnet2_ops 时，自动使用纯 PyTorch 实现的 FPS/KNN (速度较慢但功能等价)。
+> **Note:** If `pointnet2_ops` is not installed, the code automatically falls back to a pure PyTorch implementation of FPS/KNN (slower but functionally equivalent).
 
-## 数据准备
+## Data Preparation
 
-### ShapeNet55 (预训练)
+### 1. ShapeNet55 (Pre-training)
 
-将 ShapeNet55 数据集处理为 h5 格式放入 `data/ShapeNet55/`:
+Download the ShapeNet55 dataset (processed by [Point-BERT](https://github.com/lulutang0608/Point-BERT)) and place it in `data/ShapeNet55/`:
 
-```
+```text
 data/ShapeNet55/
 ├── train.h5    # keys: "data" (N, 8192, 3), "label" (N,)
 └── test.h5
 ```
 
-### PartNet-Mobility (下游任务)
+### 2. PartNet-Mobility (Downstream Tasks)
 
-将 PartNet-Mobility 数据放入 `data/PartNetMobility/`:
+Register at [SAPIEN](https://sapien.ucsd.edu/) and download PartNet-Mobility models. Organize the data in `data/PartNetMobility/`:
 
-```
+```text
 data/PartNetMobility/
-├── train.txt           # 训练集物体 ID 列表
-├── val.txt             # 验证集物体 ID 列表
-├── test.txt            # 测试集物体 ID 列表
-└── <object_id>/        # 每个物体一个目录
-    ├── point_cloud.npy # (8192, 3) 点云
-    ├── seg_label.npy   # (8192,) 部件分割标签
-    ├── movable_label.npy # (8192,) 可动性标签
-    └── joint_params.json # 关节参数
+├── train.txt               # Object ID list for training
+├── val.txt                 # Object ID list for validation
+├── test.txt                # Object ID list for testing
+└── <object_id>/            # One directory per object
+    ├── point_cloud.npy     # (8192, 3) point cloud
+    ├── seg_label.npy       # (8192,) part segmentation labels
+    ├── movable_label.npy   # (8192,) movability labels
+    └── joint_params.json   # Joint parameters (type, axis, position, state)
 ```
 
-## 训练
+## Training
 
-### 阶段 1: VQ-VAE 预训练 (ShapeNet, 300 epochs)
+### Stage 1: VQ-VAE Pre-training (ShapeNet, 300 epochs)
+
+Pre-train the MSFE backbone with masked token prediction on ShapeNet55:
 
 ```bash
 python -m gmap.train.train_pretrain --config configs/pretrain.yaml
 ```
 
-### 阶段 2: 下游任务微调 (PartNet-Mobility, 各 100 epochs)
+### Stage 2: Downstream Fine-tuning (PartNet-Mobility, 100 epochs each)
 
 ```bash
-# Seg-Net: 部件分割 + 可动性预测
+# Seg-Net: Part segmentation + movability prediction
 python -m gmap.train.train_segnet --config configs/segnet.yaml
 
-# Para-Net: 关节参数估计
+# Para-Net: Joint parameter estimation
 python -m gmap.train.train_paranet --config configs/paranet.yaml
 
-# Afford-Net: 可操作性预测
+# Afford-Net: Affordance prediction
 python -m gmap.train.train_affordnet --config configs/affordnet.yaml
 ```
 
-### 阶段 3: SAPIEN 仿真评估
+### Stage 3: Simulation Evaluation
 
 ```bash
 python -m gmap.simulation.evaluate_sim \
@@ -134,59 +104,79 @@ python -m gmap.simulation.evaluate_sim \
     --affordnet_ckpt checkpoints/affordnet/epoch_100.pth
 ```
 
-## 模型架构
-
-### MSFE (多尺度特征提取器)
-
-| 尺度 | FPS 中心数 | KNN 邻居数 | ViT 配置 |
-|------|-----------|-----------|----------|
-| Scale 1 | 512 | 32 | 6 层, 384 维, 6 头 |
-| Scale 2 | 256 | 8 | 6 层, 384 维, 6 头 |
-| Scale 3 | 64 | 8 | 6 层, 384 维, 6 头 |
-
-### 预训练超参数
-
-| 参数 | 值 |
-|------|-----|
-| 输入点数 | 8192 |
-| 掩码比例 | 60% |
-| Codebook 大小 | 8192 |
-| Codebook 维度 | 256 |
-| 训练轮数 | 300 |
-| 学习率 | 1e-3 (cosine + 10 epoch warmup) |
-| 优化器 | AdamW (weight_decay=0.05) |
-
-### 评估指标
-
-- **Seg-Net**: mIoU (部件分割), Accuracy (可动性)
-- **Para-Net**: 关节类型准确率, 方向误差 (°), 位置误差 (cm), 状态误差
-- **仿真**: 7 类物体 (Laptop, Box, Drawer, Door, Faucet, Kettle, Switch) 操控成功率
-
-## 测试
+## Evaluation
 
 ```bash
-# 运行全部 33 个单元测试
+# Run all unit tests
 python -m pytest tests/ -v
 ```
 
-## 技术栈
+## Project Structure
 
-- PyTorch >= 1.12
-- timm (ViT 实现参考)
-- pointnet2_ops (可选 CUDA 加速)
-- SAPIEN >= 2.0 (仿真评估)
-- scipy, h5py, open3d, einops, tensorboard
+```text
+gmap/
+├── gmap/
+│   ├── models/               # Network architectures
+│   │   ├── msfe.py           # Multi-Scale Feature Extractor (3-scale ViT)
+│   │   ├── dvae.py           # Discrete VAE tokenizer (Gumbel-Softmax)
+│   │   ├── pfe.py            # Point-level Feature Propagation
+│   │   ├── pretrain.py       # VQ-VAE masked pre-training model
+│   │   ├── segnet.py         # Part segmentation + movability
+│   │   ├── paranet.py        # Joint parameter estimation
+│   │   ├── affordnet.py      # Affordance prediction (proposal + scoring)
+│   │   ├── transformer.py    # ViT encoder blocks
+│   │   └── pointnet2_utils.py # FPS, KNN, multi-scale grouping
+│   ├── data/                  # Dataset loading
+│   │   ├── shapenet_dataset.py
+│   │   ├── partnet_dataset.py
+│   │   └── transforms.py
+│   ├── train/                 # Training scripts
+│   │   ├── train_pretrain.py
+│   │   ├── train_segnet.py
+│   │   ├── train_paranet.py
+│   │   └── train_affordnet.py
+│   ├── eval/                  # Evaluation metrics
+│   │   └── metrics.py        # mIoU, axis error, position error
+│   ├── planner/               # Trajectory planning
+│   │   └── trajectory.py     # Revolute / prismatic trajectory generation
+│   ├── simulation/            # SAPIEN simulation
+│   │   ├── env.py            # Articulated object environment
+│   │   ├── robot.py          # Panda robot controller
+│   │   └── evaluate_sim.py   # End-to-end evaluation pipeline
+│   └── utils/                 # Utilities
+│       ├── logger.py
+│       ├── checkpoint.py
+│       └── pc_utils.py
+├── configs/                   # YAML configuration files
+├── tests/                     # Unit tests (33 tests)
+├── setup.py
+└── requirements.txt
+```
 
-## 引用
+## Acknowledgements
+
+This project builds upon several excellent open-source projects:
+
+- [SAPIEN](https://sapien.ucsd.edu/) for the articulated object simulation platform
+- [Pointnet2_PyTorch](https://github.com/erikwijmans/Pointnet2_PyTorch) for PointNet++ CUDA operations
+- [Point-BERT](https://github.com/lulutang0608/Point-BERT) for the dVAE tokenizer design
+- [Point-MAE](https://github.com/Pang-Yatian/Point-MAE) for masked autoencoder pre-training
+- [PyTorch](https://pytorch.org/) as the deep learning framework
+
+## Citation
 
 ```bibtex
 @inproceedings{zeng2025gmap,
-  title={GMAP: Generalized Manipulation of Articulated Objects in Robotic Using Pre-trained Model},
-  author={Zeng, H. and Zhang, P. and Li, F. and Yi, Q. and Ye, T. and Wang, J.},
-  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
-  volume={39},
-  number={14},
-  pages={14736--14744},
-  year={2025}
+  title     = {GMAP: Generalized Manipulation of Articulated Objects in Robotic Using Pre-trained Model},
+  author    = {Zeng, Hongliang and Zhang, Ping and Li, Fang and Yi, Qiong and Ye, Tingyu and Wang, Jiahua},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume    = {39},
+  number    = {14},
+  pages     = {14736--14744},
+  year      = {2025}
 }
 ```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
